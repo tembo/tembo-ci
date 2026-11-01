@@ -328,4 +328,3 @@ CI_WORKFLOW=../../../templates/ci.yml.example node --test *.test.mjs
 ```
 
 For installation details and adaptations (npm, yarn, other languages, matrices, and service-dependent jobs), see [SKILL.md](./SKILL.md).
-

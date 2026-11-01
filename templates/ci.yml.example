@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+    # Tembo-created PRs (a `tembo/` branch in this repository) skip every job here, including
+    # `checks`: the Tembo session runs scripts/ci/tembo-ci.mjs before pushing and posts its
+    # results as check runs with these same names. Human, other-bot and fork PRs run here.
+    # To turn session CI off, delete the `!(...)` part of each `if:` below.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Each job's check name and command are defined once, in scripts/ci/jobs.mjs, and every job step
+# runs `node scripts/ci/job.mjs <id>`. scripts/ci/ci-workflow.test.mjs fails if this file drifts.
+jobs:
+  lint:
+    name: lint
+    if: github.event_name != 'pull_request' || !(github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'tembo/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/ci/job.mjs lint
+
+  typecheck:
+    name: typecheck
+    if: github.event_name != 'pull_request' || !(github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'tembo/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/ci/job.mjs typecheck
+
+  test:
+    name: test
+    if: github.event_name != 'pull_request' || !(github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'tembo/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/ci/job.mjs test
+
+  # The one required status check. On Tembo PRs the session posts `checks` itself.
+  checks:
+    name: checks
+    if: always() && (github.event_name != 'pull_request' || !(github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'tembo/')))
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: node -e 'const n=JSON.parse(process.env.NEEDS);const bad=Object.entries(n).filter(([,v])=>v.result!=="success");for(const [k,v] of bad)console.error(k+": "+v.result);process.exit(bad.length?1:0)'

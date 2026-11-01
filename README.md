@@ -1,55 +1,61 @@
-# tembo-session-ci
+<div align="center">
+  <h1>Tembo CI</h1>
+<a href="https://tembo.io"><img alt="Made by Tembo" src="https://img.shields.io/badge/MADE%20BY%20TEMBO-0f172a.svg?style=for-the-badge&labelColor=000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB2aWV3Qm94PSIwIDAgMzIgMzIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZmlsbD0ibm9uZSI%2BPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNiA2KSBzY2FsZSgwLjE5OTMpIHRyYW5zbGF0ZSgwIC0yLjUwODYxKSIgZmlsbD0iI2ZmZmZmZiI%2BPHBhdGggZD0iTTMzLjQ1MDMgNjkuNDA5NkgwVjEwMi44NkgzMy40NTAzVjY5LjQwOTZaIi8%2BPHBhdGggZD0iTTEwMC4zNDggNjkuNDA5Nkg2Ni44OTc0VjEwMi44NkgxMDAuMzQ4VjY5LjQwOTZaIi8%2BPHBhdGggZD0iTTEwMC4zNTEgMzUuOTU4OVYyLjUwODYxSDBWMzUuOTU4OUgzMy40NTAzTDMzLjQ1MDMgNjkuNDA5Nkw2Ni45MDA2IDY5LjQwOTJWMzUuOTU4OUgxMDAuMzUxWiIvPjwvZz48L3N2Zz4%3D"></a>
+  <p>Run CI in your Tembo session. Push with results ready.</p>
+  <p><a href="#quickstart">Quickstart</a> · <a href="#manual-setup">Manual setup</a> · <a href="#faq">FAQ</a></p>
+</div>
 
-A portable skill + scripts that let Tembo sessions run a repo's CI themselves and post the results as GitHub check runs on Tembo PRs, while every other PR keeps using GitHub Actions.
+> Run your tests before pushing, then publish the results as GitHub checks on your PR.
 
-## Package contents
+Your Tembo session already has your code and dependencies. Tembo CI uses that environment to run your CI suite, saves the results, and posts them to GitHub after the push. When the tested code is unchanged, there is no second test run to wait for.
 
-- `SKILL.md` – what it does, prerequisites (incl. check-run auth), install steps, verification, rollback, adaptations.
-- `code/scripts/ci/` – `job.mjs`, `jobs.mjs` (example jobs), `tembo-ci.mjs`, and `node:test` tests incl. the ci.yml drift test.
-- `templates/` – `ci.yml.example`, `jobs.example.mjs`, `AGENTS-snippet.md`.
+## At a Glance
 
-Self-test: `cd code/scripts/ci && CI_WORKFLOW=../../../templates/ci.yml.example node --test *.test.mjs`
+| Area | What Tembo CI provides |
+| --- | --- |
+| Tembo PRs | CI runs in the session before pushing |
+| GitHub checks | Results appear on the PR under your existing check names |
+| Other PRs | People, other agents, and forks keep using GitHub Actions |
+| Shared commands | Actions and Tembo use the same job definitions |
+| Result reuse | Passing results are reused for the same code, base, and toolchain |
+| Setup | One setup PR with scripts, workflow changes, and agent instructions |
 
-## Run PR CI inside your Tembo sessions
+## Quickstart
 
-A Tembo coding session already has your code checked out and your dependencies installed, because Tembo snapshots cache both. So instead of pushing a branch and waiting for GitHub Actions to rebuild everything, the session can run your full CI suite once in its sandbox on the finished tree. It pushes only when that run is green, then posts the saved results to the pull request as GitHub check runs.
+**Ask a Tembo session to set it up.** Open a session in the repository you want to enable and paste:
 
-Running CI in the session this way makes CI after the push effectively free in time and money. Even counting the full cost of the Tembo coding session, a change is about 2x faster end to end and costs only about a third more than coding on "free" laptop compute with unsharded GitHub Actions. It is also cheaper than sharded Actions.
+```text
+Set up Tembo CI in this repository using https://github.com/tembo/tembo-ci.
+Read its SKILL.md for the installation steps and use the supplied scripts and templates.
+Adapt the example jobs to our existing CI commands and check names.
+Keep GitHub Actions running for non-Tembo PRs, forks, and pushes to main.
+Verify the setup and open a PR with the changes.
+```
 
-### CI after the push
+The session copies the runner, connects your existing CI commands, updates the workflow, and adds the instructions future sessions need. The bundled jobs are examples; setup adapts them to your repository.
 
-Baseline: laptop plus unsharded Actions.
+**Before you merge:** your Tembo environment needs Node 18+, git, your package manager (pnpm by default), dependencies, and any test services. The Tembo GitHub App needs **Checks: write** and **Pull requests: read**. A repository admin should confirm required checks accept results from Tembo as well as GitHub Actions. See [Turning it on](#turning-it-on) for the checklist.
 
-| Scenario | CI time | Time vs. baseline | CI cost per push | Cost vs. baseline |
-|---|---|---|---|---|
-| Local + Actions, unsharded | 11 min | 100% | ~$0.11 (~14 runner-min) | 100% |
-| Local + Actions, sharded | 6 min | ~55% | $0.18 (23 runner-min) | ~164% |
-| Tembo, jobs one at a time | 3 s | <1% | ~$0 (posting only) | ~0% |
-| Tembo, 2 jobs at once (default) | 3 s | <1% | ~$0 (posting only) | ~0% |
+### After setup
 
-In the Tembo rows, the test run before the push counts as part of the coding session (see the next table).
+Future sessions follow this flow:
 
-### Full timeline per change, including the coding session
+```bash
+# 1. Run CI on the finished changes. Fix any failures before pushing.
+node scripts/ci/tembo-ci.mjs
 
-Coding is assumed to take 10 minutes.
+# 2. Commit and push as usual, then publish results to your PR.
+node scripts/ci/tembo-ci.mjs --pr 123
+```
 
-| Scenario | 1. Coding | 2. Lint/tests before push | 3. CI after push | Wait for green after coding done | Total time | Time vs. baseline | Cost per change | Cost vs. baseline |
-|---|---|---|---|---|---|---|---|---|
-| Local + Actions, unsharded | 10 min | 14 min | 11 min | 25 min | 35 min | 100% | ~$0.11 (Actions only) | 100% |
-| Local + Actions, sharded | 10 min | 14 min | 6 min | 20 min | 30 min | 86% | $0.18 (Actions only) | ~164% |
-| Tembo, jobs one at a time | 10 min | 14 min | 3 s | 14 min | 24 min | 69% | ~$0.21 (24 VM-min) | ~190% |
-| Tembo, 2 jobs at once (default) | 10 min | 7 min | 3 s | 7 min | 17 min | 49% | ~$0.15 (17 VM-min) | ~134% |
+Replace `123` with your PR number. Run the second command after every push. If the code, base, or toolchain changed, the runner reruns the jobs it cannot reuse.
 
-### Method notes
+## Core Concepts
 
-- Actions is priced at GitHub's $0.008 per runner-minute Linux rate, with each job rounded up to a whole minute. Costs are total billed runner-minutes across all jobs and shards, not wall time.
-- Sharded: 6 test shards plus plan, docs and checks jobs. Median of 16 real runs: 6.2 min wall, 23 billed runner-minutes.
-- Unsharded is an estimate: the sum of the shard test times plus one job's setup.
-- Tembo VM: 8 vCPU / 16 GiB at $0.5304/hour ([tembo.io/pricing](https://tembo.io/pricing)), billed per second.
-- Laptop compute and model/token costs are not counted. Coding time is an assumed 10 minutes. Local test time is assumed equal to Tembo running jobs one at a time.
-- Tembo posting latency after the push: median about 3-4 s, worst 19 s.
-
-This guide shows how to set that up in any repository. It covers PRs from Tembo sessions and PRs from anywhere else.
+- **Jobs** are your lint, test, build, and other CI commands, defined in `scripts/ci/jobs.mjs`.
+- **Saved results** record what passed for a specific code tree, merge base, and toolchain. Failed jobs always rerun.
+- **Checks** are the results reviewers see on GitHub. The `checks` gate summarizes whether the suite passed.
+- **Workflow routing** sends same-repository `tembo/` PRs to session CI. Other PRs and pushes to `main` continue on Actions.
 
 ## How it works
 
@@ -71,18 +77,11 @@ flowchart TD
 3. **After pushing**, the session runs `node scripts/ci/tembo-ci.mjs --pr <n>`. The script reads the PR head, finds the saved results for that tree, and posts one check run per job through the GitHub Checks API. Each check run has the same name as the matching Actions job.
 4. **Nothing runs a second time** unless the tree, merge base or toolchain changed, a job failed or timed out, or you pass `--no-cache`. Reused check runs start with `Reused result from <time>, tree <sha>` and keep the start and end times from the original run.
 5. **Actions skips only Tembo PRs.** `ci.yml` skips its PR jobs for PRs whose branch starts with `tembo/` and comes from the same repository. Forks can't skip CI by naming a branch that way. Every other PR (Codex, human, forks) runs normal Actions CI. Pushes to `main`, nightly runs, releases and manual runs keep running on Actions.
-6. **One set of CI jobs.** Jobs are defined once, in `scripts/ci/jobs.mjs`. Actions and Tembo both run them through `scripts/ci/job.mjs`, and a test fails if the workflow and `jobs.mjs` drift apart. To add a job, edit `jobs.mjs`.
+6. **One set of CI jobs.** Jobs are defined once, in `scripts/ci/jobs.mjs`. Actions and Tembo both run them through `scripts/ci/job.mjs`, and a test fails if the workflow and `jobs.mjs` drift apart. To add a job, update `jobs.mjs` and the matching workflow job; the drift test checks that they agree.
 
 The check runs are posted with the Tembo GitHub App's installation token, which the session already has through its git credential helper. The app can create check runs and commit statuses, so you don't need to add a token.
 
-## Prerequisites
-
-- The Tembo GitHub App is installed on the repository with **Checks: write** permission (add **Commit statuses: write** if you post statuses).
-- A Tembo environment or snapshot that has your toolchain and dependencies, plus any services your tests need, such as a local Postgres.
-- A CI suite you can start from the command line. Each Actions job should map to an entry in `scripts/ci/jobs.mjs`, run through `scripts/ci/job.mjs`. If your jobs are inline YAML steps, move them into that file first.
-- Admin access to the repository, for the branch rules.
-
-## Step-by-step setup
+## Manual Setup
 
 ### 1. Gate the PR jobs in your workflow
 
@@ -129,70 +128,15 @@ There is no variable or switch to set: once this change is merged, same-repo `te
 
 ### 2. Add the runner script
 
-Create `scripts/ci/tembo-ci.mjs`. The outline below is minimal. In the real setup, `JOBS` is imported from `scripts/ci/jobs.mjs` (the same list Actions uses), and each job runs through `scripts/ci/job.mjs`. The `name` values must match the check names that appear on PRs today.
+Copy the supplied [runner](./code/scripts/ci/tembo-ci.mjs), [job launcher](./code/scripts/ci/job.mjs), [job definitions](./code/scripts/ci/jobs.mjs), and tests into your repository's `scripts/ci/` directory. Use the working implementation rather than writing a runner from scratch.
 
-```js
-#!/usr/bin/env node
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+Replace the example jobs in `jobs.mjs` with your CI commands and preserve the check names your repository already requires. Set `INSTALL` to your install command. See the [jobs template](./templates/jobs.example.mjs) for the format.
 
-// Names must match the GitHub Actions job names exactly.
-const JOBS = [
-  { id: 'lint', name: 'lint', cmd: ['pnpm', 'run', 'lint'] },
-  { id: 'test', name: 'test',       cmd: ['pnpm', 'test'] },
-  { id: 'build', name: 'build',           cmd: ['pnpm', 'build'] },
-];
-const GATE = 'checks';
-const PARALLEL = Number(arg('--jobs') ?? 2);
-
-const git = (args, opts = {}) => execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
-function arg(flag) { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; }
-
-// 1. Get the tree of the working directory as it would be committed. Use a copy of the
-//    index so the real one is left alone. Untracked files that aren't ignored are included.
-function workingTree() {
-  const index = join(tmpdir(), `tembo-ci-index-${process.pid}`);
-  copyFileSync(git(['rev-parse', '--git-path', 'index']), index);
-  const env = { ...process.env, GIT_INDEX_FILE: index };
-  git(['add', '-A'], { env });
-  const tree = git(['write-tree'], { env });
-  rmSync(index, { force: true });
-  return tree;
-}
-
-// 2. Build the cache key.
-const toolchain = { node: process.version, pnpm: execFileSync('pnpm', ['-v'], { encoding: 'utf8' }).trim() };
-git(['fetch', '--quiet', 'origin', 'main']);
-
-const pr = arg('--pr');
-const headSha = pr ? await prHead(pr) : null;           // with --pr, test exactly what was pushed
-const tree = pr ? git(['rev-parse', `${headSha}^{tree}`]) : workingTree();
-const base = git(['merge-base', pr ? headSha : 'HEAD', 'origin/main']);
-const resultsFile = join('.tembo-ci/results', `${tree}.json`);
-mkdirSync('.tembo-ci/results', { recursive: true });
-
-const saved = existsSync(resultsFile) && !process.argv.includes('--no-cache')
-  ? JSON.parse(readFileSync(resultsFile, 'utf8')) : null;
-const sameKey = saved && saved.base === base && JSON.stringify(saved.toolchain) === JSON.stringify(toolchain);
-const reusable = id => sameKey && saved.jobs[id]?.conclusion === 'success';
-
-// 3. Run the jobs that can't be reused, PARALLEL at a time, each in its own worktree.
-//    Remove secrets from the job env: tokens, production DB URLs, etc.
-//    Save { tree, base, toolchain, jobs: { [id]: { conclusion, startedAt, completedAt, summary } } }.
-
-// 4. With --pr, post one check run per job, then the gate last (see payloads below).
-//    If anything throws, complete every open check run as failure; on SIGINT, cancelled.
-//    Never leave a check run in_progress.
-```
-
-To create test commits for a planner that needs a commit SHA instead of a tree, use `git commit-tree` with fixed author, committer and date. The same tree and parent then always produce the same SHA. The commit is never pushed and no branch points to it.
-
-Add the results directory to `.gitignore`:
+Add both generated-output directories to `.gitignore` so results do not change the tree being tested:
 
 ```gitignore
 .tembo-ci/
+test-results/
 ```
 
 ### 3. Post check runs
@@ -270,7 +214,7 @@ If the sandbox needs services (e.g. Postgres), start them first.
 
 ### 6. Size the VM
 
-In our repo, the session runs two jobs at a time on an 8 vCPU VM, and a full run takes about 7 minutes, most of it the database tests. Running more jobs at once on a small VM usually makes the total time longer because the jobs compete for CPU. Add a `--jobs <n>` flag and set a timeout for each job (we use 45 minutes) so a job that hangs ends as `timed_out` and doesn't stall the session.
+In our repo, the session runs two jobs at a time on an 8 vCPU VM, and a full run takes about 7 minutes, most of it the database tests. Running more jobs at once on a small VM usually makes the total time longer because the jobs compete for CPU. Use `--jobs <n>` to adjust concurrency and `--timeout-minutes <n>` to set the per-job timeout (default: 45 minutes) so a job that hangs ends as `timed_out` and doesn't stall the session.
 
 ## Turning it on
 
@@ -326,3 +270,62 @@ Dependencies come from the snapshot and the local package store (`pnpm install -
 
 **Where are the logs?**
 Each job's log and test output are copied to a local folder (for example `test-results/tembo-ci/`). When a job fails, the end of its log goes into the check run's `text`, so reviewers can see it on the PR.
+
+## Performance Example
+
+The following figures describe the original example repository, not a guarantee for every project. They include an assumed 10-minute coding session; test durations and costs depend on your suite and environment.
+
+### CI after the push
+
+Baseline: laptop plus unsharded Actions.
+
+| Scenario | CI time | Time vs. baseline | CI cost per push | Cost vs. baseline |
+|---|---|---|---|---|
+| Local + Actions, unsharded | 11 min | 100% | ~$0.11 (~14 runner-min) | 100% |
+| Local + Actions, sharded | 6 min | ~55% | $0.18 (23 runner-min) | ~164% |
+| Tembo, jobs one at a time | 3 s | <1% | ~$0 (posting only) | ~0% |
+| Tembo, 2 jobs at once (default) | 3 s | <1% | ~$0 (posting only) | ~0% |
+
+In the Tembo rows, the test run before the push counts as part of the coding session (see the next table).
+
+### Full timeline per change, including the coding session
+
+Coding is assumed to take 10 minutes.
+
+| Scenario | 1. Coding | 2. Lint/tests before push | 3. CI after push | Wait for green after coding done | Total time | Time vs. baseline | Cost per change | Cost vs. baseline |
+|---|---|---|---|---|---|---|---|---|
+| Local + Actions, unsharded | 10 min | 14 min | 11 min | 25 min | 35 min | 100% | ~$0.11 (Actions only) | 100% |
+| Local + Actions, sharded | 10 min | 14 min | 6 min | 20 min | 30 min | 86% | $0.18 (Actions only) | ~164% |
+| Tembo, jobs one at a time | 10 min | 14 min | 3 s | 14 min | 24 min | 69% | ~$0.21 (24 VM-min) | ~190% |
+| Tembo, 2 jobs at once (default) | 10 min | 7 min | 3 s | 7 min | 17 min | 49% | ~$0.15 (17 VM-min) | ~134% |
+
+### Method notes
+
+- Actions is priced at GitHub's $0.008 per runner-minute Linux rate, with each job rounded up to a whole minute. Costs are total billed runner-minutes across all jobs and shards, not wall time.
+- Sharded: 6 test shards plus plan, docs and checks jobs. Median of 16 real runs: 6.2 min wall, 23 billed runner-minutes.
+- Unsharded is an estimate: the sum of the shard test times plus one job's setup.
+- Tembo VM: 8 vCPU / 16 GiB at $0.5304/hour ([tembo.io/pricing](https://tembo.io/pricing)), billed per second.
+- Laptop compute and model/token costs are not counted. Coding time is an assumed 10 minutes. Local test time is assumed equal to Tembo running jobs one at a time.
+- Tembo posting latency after the push: median about 3-4 s, worst 19 s.
+
+## Repository Layout
+
+```text
+tembo-ci/
+|-- SKILL.md                   Agent installation instructions
+|-- code/scripts/ci/            Runner, job definitions, and self-tests
+|-- templates/                 Workflow, jobs, and agent instruction examples
+`-- tembo-session-ci-guide.md   Original standalone guide
+```
+
+## Local Development
+
+Run the bundled self-tests from the repository root:
+
+```bash
+cd code/scripts/ci
+CI_WORKFLOW=../../../templates/ci.yml.example node --test *.test.mjs
+```
+
+For installation details and adaptations (npm, yarn, other languages, matrices, and service-dependent jobs), see [SKILL.md](./SKILL.md).
+
